@@ -162,7 +162,7 @@ def update_menu_phase(dts):
         y = 520 + yof7 * 900
         c = hg.Color(1., 0.9, 0.3, 1) * f
         if Main.flag_vr:
-            Overlays.add_text2D("Recenter view", hg.Vec2(x, (y+20) / 900), s, c, Main.hud_font)
+            Overlays.add_text2D("Recenter view", hg.Vec2(x, (y + 20) / 900), s, c, Main.hud_font)
         Overlays.add_text2D("Thrust level", hg.Vec2(x, (y) / 900), s, c, Main.hud_font)
         Overlays.add_text2D("Pitch", hg.Vec2(x, (y - 20) / 900), s, c, Main.hud_font)
         Overlays.add_text2D("Roll", hg.Vec2(x, (y - 40) / 900), s, c, Main.hud_font)
@@ -186,7 +186,7 @@ def update_menu_phase(dts):
         x = 815 / 1600
         c = hg.Color.White * f
         if Main.flag_vr:
-            Overlays.add_text2D("F11", hg.Vec2(x, (y+20) / 900), s, c, Main.hud_font)
+            Overlays.add_text2D("F11", hg.Vec2(x, (y + 20) / 900), s, c, Main.hud_font)
         Overlays.add_text2D("Home / End", hg.Vec2(x, (y) / 900), s, c, Main.hud_font)
         Overlays.add_text2D("Up / Down", hg.Vec2(x, (y - 20) / 900), s, c, Main.hud_font)
         Overlays.add_text2D("Right / Left", hg.Vec2(x, (y - 40) / 900), s, c, Main.hud_font)
@@ -209,7 +209,7 @@ def update_menu_phase(dts):
         # Paddle
         if Main.flag_paddle:
             x = 990 / 1600
-            Overlays.add_text2D("Right pad vertical",  hg.Vec2(x, (y) / 900), s, c, Main.hud_font)
+            Overlays.add_text2D("Right pad vertical", hg.Vec2(x, (y) / 900), s, c, Main.hud_font)
             Overlays.add_text2D("Left pad vertical", hg.Vec2(x, (y - 20) / 900), s, c, Main.hud_font)
             Overlays.add_text2D("Left pad horizontal", hg.Vec2(x, (y - 40) / 900), s, c, Main.hud_font)
             Overlays.add_text2D("Right pad horizontal", hg.Vec2(x, (y - 60) / 900), s, c, Main.hud_font)
@@ -218,12 +218,12 @@ def update_menu_phase(dts):
             Overlays.add_text2D("Y", hg.Vec2(x, (y - 120) / 900), s, c, Main.hud_font)
             Overlays.add_text2D("Cross Up / Down", hg.Vec2(x, (y - 140) / 900), s, c, Main.hud_font)
             Overlays.add_text2D("Cross Right / Left", hg.Vec2(x, (y - 160) / 900), s, c, Main.hud_font)
-            Overlays.add_text2D("B",  hg.Vec2(x, (y - 180) / 900), s, c, Main.hud_font)
+            Overlays.add_text2D("B", hg.Vec2(x, (y - 180) / 900), s, c, Main.hud_font)
             Overlays.add_text2D("Back", hg.Vec2(x, (y - 200) / 900), s, c, Main.hud_font)
 
     if not Main.fading_to_next_state:
         f_start = False
-        if Main.keyboard.Pressed(hg.K_Space):
+        if Main.keyboard.Pressed(hg.K_Space) or True:
             Main.control_mode = AircraftUserControlDevice.CM_KEYBOARD
             f_start = True
         elif Main.flag_paddle:
@@ -233,7 +233,7 @@ def update_menu_phase(dts):
         elif Main.flag_generic_controller:
             if Main.generic_controller.Down(1):
                 Main.control_mode = AircraftUserControlDevice.CM_LOGITECH_ATTACK_3
-                f_start = True                
+                f_start = True
         if f_start:
             Main.post_process.setup_fading(1, -1)
             Main.fading_to_next_state = True
@@ -251,7 +251,7 @@ def init_main_phase():
     Main.flag_running = False
     Main.fading_to_next_state = False
     Main.post_process.setup_fading(1, 1)
-    #hg.StopAllSources()
+    # hg.StopAllSources()
     Main.destroy_sfx()
     ParticlesEngine.reset_engines()
     Destroyable_Machine.reset_machines()
@@ -269,7 +269,7 @@ def init_main_phase():
 
     HUD_Radar.setup_plots(Main.resolution, n_aircrafts, n_missiles, mission.allies_carriers + mission.ennemies_carriers, n_missile_launchers)
 
-    #Main.setup_weaponery()
+    # Main.setup_weaponery()
 
     Main.num_start_frames = 10
     Main.timestamp = 0
@@ -278,7 +278,6 @@ def init_main_phase():
 
 
 def update_main_phase(dts):
-
     Main.timestamp += 1
     if not Main.flag_renderless:
         Main.post_process.update_fading(dts)
@@ -377,9 +376,11 @@ def update_main_phase(dts):
 
 
 # =================================== END GAME =============================================
+RENDLESS_MODE = True
+
 
 def init_end_phase():
-    Main.set_renderless_mode(False)
+    Main.set_renderless_mode(RENDLESS_MODE)
     Main.flag_running = False
     Main.deactivate_cockpit_view()
     Main.satellite_view = False
@@ -423,7 +424,6 @@ def init_end_phase():
 
 
 def update_end_phase(dts):
-
     Main.smart_camera.update(Main.camera, dts)
 
     Main.update_kinetics(dts)
@@ -436,13 +436,15 @@ def update_end_phase(dts):
         HUD_MissileTarget.display_selected_target(Main, Main.selected_aircraft)
 
     mission = Missions.get_current_mission()
-    mission.update_end_phase(Main, dts)
+    # mission.update_end_phase(Main, dts)
+    Main.fading_to_next_state = True
+    # mission.reset()
 
     if not Main.fading_to_next_state:
         if Main.end_phase_following_aircraft.flag_destroyed or Main.end_phase_following_aircraft.wreck:
             Main.end_state_timer -= dts
         if Main.keyboard.Pressed(hg.K_Tab) or Main.end_state_timer < 0 or Main.end_phase_following_aircraft.flag_landed:
-            Main.post_process.setup_fading(1, -1)
+            # Main.post_process.setup_fading(1, -1)
             Main.fading_to_next_state = True
     else:
         Main.post_process.update_fading(dts)
@@ -450,8 +452,8 @@ def update_end_phase(dts):
             Main.master_sfx_volume = Main.post_process.fade_f
         if not Main.post_process.fade_running:
             mission.reset()
-            Main.destroy_players()
-            init_menu_phase()
+            # Main.destroy_players()
+            # init_menu_phase()
             return update_menu_phase
 
     return update_end_phase

@@ -1,4 +1,5 @@
 # Copyright (C) 2018-2021 Eric Kernin, NWNC HARFANG.
+import time
 
 import harfang as hg
 from planet_render import *
@@ -9,7 +10,7 @@ from Sprites import *
 
 # --------------- Compile assets:
 print("Compiling assets...")
-dc.run_command("..\\bin\\assetc\\assetc.exe assets -quiet -progress")
+# dc.run_command("..\\bin\\assetc\\assetc.exe assets -quiet -progress")
 
 
 hg.InputInit()
@@ -36,6 +37,7 @@ pl_resources = hg.PipelineResources()
 # input devices and fps controller states
 keyboard = hg.Keyboard()
 mouse = hg.Mouse()
+
 
 # rendering pipeline
 pipeline = hg.CreateForwardPipeline()

@@ -1,0 +1,24 @@
+{
+  "actions_each_agent_type": [
+    [
+      "INCREASE_THRUST_LEVEL",
+
+      "INCREASE_BRAKE_LEVEL",
+      "DECREASE_BRAKE_LEVEL",
+      "INCREASE_FLAPS_LEVEL",
+      "DECREASE_FLAPS_LEVEL",
+      "ROLL_LEFT",
+      "ROLL_RIGHT",
+      "PITCH_UP",
+      "PITCH_DOWN",
+      "YAW_LEFT",
+      "YAW_RIGHT",
+      "SWITCH_POST_COMBUSTION",
+      "SWITCH_GEAR"
+    ],
+    [
+      "FIRE_MACHINE_GUN",
+      "FIRE_MISSILE"
+    ]
+  ]
+}

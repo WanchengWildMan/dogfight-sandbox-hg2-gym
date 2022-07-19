@@ -1350,7 +1350,7 @@ class Aircraft(Destroyable_Machine):
         self.flag_going_to_takeoff_position = False
         self.takeoff_position = None
 
-        self.flag_easy_steering = True
+        self.flag_easy_steering = False
         self.flag_easy_steering_mem = True  # Used in IA on/off switching
         self.thrust_level_inertia = 1
         self.thrust_level_dest = 0
@@ -2060,6 +2060,8 @@ class Aircraft(Destroyable_Machine):
                     td.set_target_id(d)
 
         hg.ImGuiEnd()
+
+
 
 
 # ========================================================================================================

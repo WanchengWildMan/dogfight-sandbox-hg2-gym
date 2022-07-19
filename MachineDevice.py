@@ -1,10 +1,12 @@
 # Copyright (C) 2018-2021 Eric Kernin, NWNC HARFANG.
+import time
 
 import harfang as hg
 import json
 from math import radians, degrees, pi, sqrt, exp, floor, acos, asin, sin, cos
 from random import uniform
 from Particles import *
+
 
 # =====================================================================================================
 #                                  Landing
@@ -50,6 +52,7 @@ class LandingTarget:
         org = self.landing_node.GetTransform().GetWorld()
         az = hg.GetZ(org) * -1
         return hg.Normalize(hg.Vec2(az.x, az.z))
+
 
 # ==============================================
 #       MachineDevice
@@ -168,6 +171,7 @@ class Gear(MachineDevice):
         else:
             self.gear_level = 0
         self.flag_gear_moving = True
+
 
 # ==============================================
 #       Targetting device
@@ -318,6 +322,7 @@ class TargettingDevice(MachineDevice):
     def update(self, dts):
         self.update_target_lock(dts)
 
+
 # =====================================================================================================
 #                                   Missiles
 # =====================================================================================================
@@ -344,7 +349,6 @@ class MissilesDevice(MachineDevice):
 
     def set_missiles_config(self, missiles_config):
         self.missiles_config = missiles_config
-
 
     def fit_missile(self, missile, slot_id):
         nd = missile.get_parent_node()
@@ -405,6 +409,7 @@ class MissilesDevice(MachineDevice):
                     self.missiles_started[i] = None
                     self.fit_missile(missile, i)
 
+
 # =====================================================================================================
 #                                   Machine Gun
 # =====================================================================================================
@@ -429,7 +434,7 @@ class MachineGun(MachineDevice):
         self.bullets_particles.particles_cnt_max = num_bullets
 
         self.bullets_feed_backs = []
-        #if Destroyable_Machine.flag_activate_particles:
+        # if Destroyable_Machine.flag_activate_particles:
         self.setup_particles()
 
     def reset(self):
@@ -460,7 +465,7 @@ class MachineGun(MachineDevice):
 
     def destroy_particles(self):
         self.destroy_feedbacks()
-        #self.bullets_particles.destroy()
+        # self.bullets_particles.destroy()
 
     def destroy_gun(self):
         self.destroy_feedbacks()
@@ -499,7 +504,7 @@ class MachineGun(MachineDevice):
 
                     p1 = pos_fb + bullet.v_move
 
-                    #Collision using distance:
+                    # Collision using distance:
                     """
                     for target in targets:
                         distance = hg.Len(target.get_parent_node().GetTransform().GetPos()-pos_fb)
@@ -523,7 +528,6 @@ class MachineGun(MachineDevice):
                                         bullet.v_move = target.v_move
                                         self.strike(i)
                                         break
-
 
                 if len(self.bullets_feed_backs) > 0:
                     fb = self.bullets_feed_backs[i]
@@ -553,17 +557,18 @@ class MachineGun(MachineDevice):
     def get_new_bullets_count(self):
         return self.bullets_particles.num_new
 
+
 # ==============================================
 #       Control device
 # ==============================================
 
 class ControlDevice(MachineDevice):
-
     CM_KEYBOARD = "Keyboard"
     CM_GAMEPAD = "GamePad"
     CM_MOUSE = "Mouse"
     CM_LOGITECH_EXTREME_3DPRO = "Logitech extreme 3DPro"
     CM_LOGITECH_ATTACK_3 = "Logitech Attack 3"
+    AGENT_VIRTUAL_KEYBOARD = "AgentVirtualKeyboard"
 
     keyboard = None
     mouse = None
@@ -629,6 +634,41 @@ class ControlDevice(MachineDevice):
 
     def is_user_control_active(self):
         return self.flag_user_control
+
+
+class AgentVirtualKeyboard(ControlDevice):
+
+    def __init__(self, name, machine, inputs_mapping_file, control_mode=ControlDevice.CM_KEYBOARD, start_state=False):
+        ControlDevice.__init__(self, name, machine, inputs_mapping_file, "AircraftUserInputsMapping", control_mode, start_state)
+        self.realKeyboard = hg.Keyboard()
+        self.num_keys = len(self.inputs_mapping["AircraftUserInputsMapping"]["Keyboard"].values())
+        self.key_status = dict(zip(list(self.inputs_mapping["AircraftUserInputsMapping"]["Keyboard"].values()), [False] * self.num_keys))
+        self.TEST = False
+
+    def Down(self, key):
+        return self.realKeyboard.Down(key) or (self.key_status[key] == 1 if self.key_status.get(key) is not None else 0)
+
+    def Up(self, key):
+        return self.key_status[key] == 0
+
+    def Pressed(self, key):
+        return self.realKeyboard.Pressed(key) or (self.key_status[key] == 1 if self.key_status.get(key) is not None else 0)
+
+    def Released(self, key):
+        return self.realKeyboard.Released(key)
+
+    def Press(self, key):
+        self.key_status[key] = 1
+
+    def Unpress(self, key):
+        self.key_status[key] = 0
+
+
+    def Update(self):
+        self.realKeyboard.Update()
+
+    # self.inputs_mapping["AircraftUserInputsMapping"][]
+
 
 # ==============================================
 #       Missile user control device - Dubug mode
@@ -835,6 +875,7 @@ class MissileLauncherUserControlDevice(ControlDevice):
         if ControlDevice.gamepad.Pressed(value):
             self.machine.rearm()
 
+
 # ==============================================
 #       Aircraft user control device
 # ==============================================
@@ -945,7 +986,7 @@ class AircraftUserControlDevice(ControlDevice):
 
         elif cmode == ControlDevice.CM_LOGITECH_EXTREME_3DPRO:
             self.commands.update({
-                })
+            })
 
         elif cmode == ControlDevice.CM_MOUSE:
             self.commands.update({})
@@ -1103,7 +1144,6 @@ class AircraftUserControlDevice(ControlDevice):
                 self.deactivate()
                 autopilot_device.activate()
 
-
     def activate_ia_kb(self, value):
         if ControlDevice.keyboard.Pressed(value):
             ia_device = self.machine.get_device("IAControlDevice")
@@ -1238,7 +1278,6 @@ class AircraftUserControlDevice(ControlDevice):
                     else:
                         gear.activate()
 
-
     def activate_autopilot_la3(self, value):
         pass
 
@@ -1247,7 +1286,6 @@ class AircraftUserControlDevice(ControlDevice):
 
     def switch_easy_steering_la3(self, value):
         pass
-
 
     def fire_machine_gun_la3(self, value):
         if ControlDevice.generic_controller.Down(value):
@@ -1263,14 +1301,11 @@ class AircraftUserControlDevice(ControlDevice):
                 if mgd is not None and mgd.is_gun_activated():
                     mgd.stop_machine_gun()
 
-
     def fire_missile_la3(self, value):
         if ControlDevice.generic_controller.Pressed(value):
             md = self.machine.get_device("MissilesDevice")
             if md is not None:
                 md.fire_missile()
-
-
 
     # =============================== Gamepad commands ====================================
 
@@ -1461,7 +1496,6 @@ class AircraftAutopilotControlDevice(ControlDevice):
 
         elif cmode == ControlDevice.CM_MOUSE:
             self.commands.update({})
-
 
     # ============================== functions
 
@@ -1675,7 +1709,7 @@ class AircraftAutopilotControlDevice(ControlDevice):
                 elif self.control_mode == ControlDevice.CM_MOUSE:
                     self.update_cm_mouse(dts)
                 elif self.control_mode == ControlDevice.CM_LOGITECH_ATTACK_3:
-                     self.update_cm_la3(dts)
+                    self.update_cm_la3(dts)
 
             self.update_controlled_devices(dts)
 
@@ -2115,6 +2149,7 @@ class AircraftIAControlDevice(ControlDevice):
             if len(offenders) > 1:
                 offenders.sort(key=lambda p: p[1])
             td.set_target_id(offenders[0][0])
+
     # =============================== Keyboard commands ====================================
 
     def activate_user_control_kb(self, value):

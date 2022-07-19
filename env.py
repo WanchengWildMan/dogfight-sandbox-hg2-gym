@@ -3,6 +3,10 @@
 import harfang as hg
 import numpy as np
 from gym import spaces
+
+import Machines
+import Missions
+from Missions import *
 from master import Main
 import data_converter as dc
 import states
@@ -13,55 +17,19 @@ import sys
 from os import path, getcwd
 import json
 from math import log, floor
+from Machines import *
+from scripts.state_config import *
 
 main_name = sys.argv.pop(0)
 
 
 class HarFangDogFightEnv():
-    def __init__(self, all_args):
+    input_mapping_name = "AircraftUserInputsMapping"
+    inputs_mapping_file = "scripts/aircraft_user_inputs_mapping.json"
+    inputs_mapping = {}
 
-        self.agent_type_action_mapping = json.load(open("scripts/agent_type_action_mapping.json"))
-        self.num_agent_types = len(self.agent_type_action_mapping["actions_each_agent_type"])
-        self.num_agents = 2
-        self.num_agents_each_type = [self.num_agents // self.num_agent_types] * self.num_agent_types  # args
-        self.input_status = {"SWITCH_ACTIVATION": False,
-                             "NEXT_PILOT": False,
-                             "INCREASE_HEALTH_LEVEL": False,
-                             "DECREASE_HEALTH_LEVEL": False,
-                             "INCREASE_THRUST_LEVEL": False,
-                             "DECREASE_THRUST_LEVEL": False,
-                             "SET_THRUST_LEVEL": False,
-                             "INCREASE_BRAKE_LEVEL": False,
-                             "DECREASE_BRAKE_LEVEL": False,
-                             "INCREASE_FLAPS_LEVEL": False,
-                             "DECREASE_FLAPS_LEVEL": False,
-                             "ROLL_LEFT": False,
-                             "ROLL_RIGHT": False,
-                             "SET_ROLL": False,
-                             "PITCH_UP": False,
-                             "PITCH_DOWN": False,
-                             "SET_PITCH": False,
-                             "YAW_LEFT": False,
-                             "YAW_RIGHT": False,
-                             "SET_YAW": False,
-                             "SWITCH_POST_COMBUSTION": False,
-                             "NEXT_TARGET": False,
-                             "SWITCH_GEAR": False,
-                             "ACTIVATE_AUTOPILOT": False,
-                             "ACTIVATE_IA": False,
-                             "SWITCH_EASY_STEERING": False,
-                             "FIRE_MACHINE_GUN": False,
-                             "FIRE_MISSILE": False
-                             }
+    def __init__(self):
 
-        self.observation_spaces = []
-        self.action_spaces = []
-        # self.action_dim=[]
-        self.action_tag = self.get_high_action(get_dim_tag=True)
-        self.action_tag_cumsum = [[self.action_tag[t][i].cumsum() for i in range(self.num_agents_each_type[t])] for t in range(self.num_agent_types)]
-
-        for agent_type in range(self.num_agent_types):
-            self.action_spaces.append([spaces.Box(low=0, high=1, shape=self.action_tag_cumsum[agent_type][i][0]) for i in range(self.num_agents_each_type[agent_type])])
         # ----
         # speedup/slowdown
         # turn
@@ -103,14 +71,14 @@ class HarFangDogFightEnv():
 
         # --------------- Compile assets:
         print("Compiling assets...")
-        if sys.platform == "linux" or sys.platform == "linux2":
-            assetc_cmd = [path.join(getcwd(), "../", "bin", "assetc", "assetc"), "assets", "-quiet", "-progress"]
-            dc.run_command(assetc_cmd)
-        else:
-            if Main.flag_OpenGL:
-                dc.run_command("../bin/assetc/assetc assets -api GL -quiet -progress")
-            else:
-                dc.run_command("../bin/assetc/assetc assets -quiet -progress")
+        # if sys.platform == "linux" or sys.platform == "linux2":
+        #     assetc_cmd = [path.join(getcwd(), "../", "bin", "assetc", "assetc"), "assets", "-quiet", "-progress"]
+        #     dc.run_command(assetc_cmd)
+        # else:
+        #     if Main.flag_OpenGL:
+        #         dc.run_command("../bin/assetc/assetc assets -api GL -quiet -progress")
+        #     else:
+        #         dc.run_command("../bin/assetc/assetc assets -quiet -progress")
 
         # --------------- Init system
 
@@ -181,98 +149,161 @@ class HarFangDogFightEnv():
 
         # ------------------- Setup state:
         Main.current_state = states.init_menu_phase()
+        [Main.update() for i in range(100)]
+
+        self.agent_type_action_mapping = json.load(open("scripts/agent_type_action_mapping.json"))["actions_each_agent_type"]
+        self.num_agent_types = len(self.agent_type_action_mapping)
+        self.num_agents = 2
+        self.num_agents_each_type = [self.num_agents // self.num_agent_types] * self.num_agent_types  # args
+        self.num_opr_each_type = [len(self.agent_type_action_mapping[t]) for t in range(self.num_agent_types)]
+        self.action_key_set = []
+        for t in range(self.num_agent_types):
+            self.action_key_set += self.agent_type_action_mapping[t]
+        if self.inputs_mapping_file != "":
+            self.load_inputs_mapping_file(self.inputs_mapping_file)
+
+        self.num_keys = len(self.action_key_set)
+        self.num_keys_each_type = [len(self.agent_type_action_mapping[t]) for t in range(self.num_agent_types)]
+        self.input_status = dict(zip(self.action_key_set, [False] * self.num_keys))
+
+        self.observation_spaces = []  # len=number of agents for enc_wrapper to compute share_obs_space
+        self.action_spaces = []  # len=number of agents for enc_wrapper to compute share_obs_space
+        self.obs_dim = []
+        self.action_dim = []
+        # self.action_dim=[]
+        self.action_tag = self.get_high_action(get_dim_tag=True)
+        self.action_tag_cumsum = [[self.action_tag[t][i].cumsum() for i in range(self.num_agents_each_type[t])] for t in range(self.num_agent_types)]
+
+        for agent_type in range(self.num_agent_types):
+            for agent_id in range(self.num_agents_each_type[agent_type]):
+                self.action_spaces.append(spaces.Box(low=self.get_low_action(agent_id, agent_type), high=self.get_high_action(agent_id, agent_type)))
+                self.observation_spaces.append(spaces.Box(low=self.get_low_state(agent_id, agent_type), high=self.get_high_state(agent_id, agent_type)))
+                self.obs_dim.append(self.observation(agent_id, agent_type).shape[0])  # self.get_obs().shape[0]  # 设置智能体的观测纬度
+                self.action_dim.append(self.action_spaces[-1].shape[0])
+
+    @classmethod
+    def load_inputs_mapping_file(cls, file_name):
+        file = hg.OpenText(file_name)
+        if not file:
+            print("ERROR - Can't open json file : " + file_name)
+        else:
+            json_script = hg.ReadString(file)
+            hg.Close(file)
+            if json_script != "":
+                cls.inputs_mapping_encoded = json.loads(json_script)
+                im = cls.inputs_mapping_encoded["AircraftUserInputsMapping"]
+                cmode_decode = {}
+                for cmode, maps in im.items():
+                    maps_decode = {}
+                    for cmd, hg_enum in maps.items():
+                        if hg_enum != "":
+                            if not hg_enum.isdigit():
+                                try:
+                                    exec("maps_decode['%s'] = hg.%s" % (cmd, hg_enum))
+                                except AttributeError:
+                                    print("ERROR - Harfang Enum not implemented ! - " + "hg." + hg_enum)
+                                    maps_decode[cmd] = ""
+                            else:
+                                maps_decode[cmd] = int(hg_enum)
+                        else:
+                            maps_decode[cmd] = ""
+                    cmode_decode[cmode] = maps_decode
+                cls.inputs_mapping = {cls.input_mapping_name: cmode_decode}
+            else:
+                print("ERROR - Inputs parameters empty : " + file_name)
+
+    def reset(self):
+        Main.fading_to_next_state = True
+        return self.observation()
+
+    def get_low_state(self, agent_id=None, agent_type=None, get_dim_tag=False):
+        return self.observation(agent_id, agent_type)
+
+    def get_high_state(self, agent_id=None, agent_type=None, get_dim_tag=False):
+        return self.observation(agent_id, agent_type) + 1
 
     def get_low_action(self, agent_id=None, agent_type=None, get_dim_tag=False):
         if agent_type is None:
-            return [[self.get_low_action(i, agent_type) for i in range(self.num_agents)] for t in range(self.num_agent_types)]
+            return [[self.get_low_action(i, t, get_dim_tag) for i in range(self.num_agents)] for t in range(self.num_agent_types)]
         else:
-            action_i = np.concatenate([
-                self.speedup * 0,
-                self.slowdown * 0,
-                self.turnleft * 0,
-                self.turnright * 0,
-                self.rollleft * 0,
-                self.pullup * 0,
-                self.pitchdown * 0,
-                self.missile * 0,
-                self.gun * 0,
-            ])
-            return np.array([2] * 9) if get_dim_tag else action_i
-
-    #
-    def get_high_action(self, agent_id=None, agent_type=None, get_dim_tag=False):
-        if agent_type is None:
-            return [[self.get_high_action(i, agent_type) for i in range(self.num_agents_each_type[t])] for t in range(self.num_agent_types)]
-        else:
-            if agent_type == 0:
-                action_i = np.concatenate([
-                    self.speedup[agent_id] * 0,
-                    self.slowdown[agent_id] * 0,
-                    self.turnleft[agent_id] * 0,
-                    self.turnright[agent_id] * 0,
-                    self.rollleft[agent_id] * 0,
-                    self.pullup[agent_id] * 0,
-                    self.pitchdown[agent_id] * 0,
-                ])
-            else:
-                action_i = np.concatenate([
-                    self.missile[agent_id] * 0,
-                    self.gun[agent_id] * 0,
-                ])
-            return [2] * 9 if get_dim_tag else action_i
+            return np.array([2] * self.num_keys_each_type[agent_type]) if get_dim_tag else np.array([0, 0] * self.num_opr_each_type[agent_type])
 
     def get_high_action(self, agent_id=None, agent_type=None, get_dim_tag=False):
         if agent_type is None:
-            return [[self.get_high_action(i, agent_type) for i in range(self.num_agents_each_type[t])] for t in range(self.num_agent_types)]
+            return [[self.get_high_action(i, t, get_dim_tag) for i in range(self.num_agents_each_type[t])] for t in range(self.num_agent_types)]
         else:
-            if agent_type == 0:
-                action_i = np.concatenate([
-                    self.speedup[agent_id] * 0 + 1,
-                    self.slowdown[agent_id] * 0 + 1,
-                    self.turnleft[agent_id] * 0 + 1,
-                    self.turnright[agent_id] * 0 + 1,
-                    self.rollleft[agent_id] * 0 + 1,
-                    self.pullup[agent_id] * 0 + 1,
-                    self.pitchdown[agent_id] * 0 + 1,
-                ])
-            else:
-                action_i = np.concatenate([
-                    self.missile[agent_id] * 0 + 1,
-                    self.gun[agent_id] * 0 + 1,
-                ])
-            return [2] * 9 if get_dim_tag else action_i
+            return np.array([2] * self.num_keys_each_type[agent_type]) if get_dim_tag else np.array([1, 1] * self.num_opr_each_type[agent_type])
 
     """
     :param actions: [[],[]]
     """
 
     def parse_actions(self, actions):
-        actions_parsed = [[] for i in range(self.num_agent_types)]
         for agent_type in range(self.num_agent_types):
             action_type = actions[agent_type]
-            for agent_id in range(agent_type):
+            for agent_id in range(self.num_agents_each_type[agent_type]):
                 a_i = action_type[agent_id]
-                ind = 0
-                tags = self.action_tag_cumsum[action_type][agent_id]
+                tags = self.action_tag_cumsum[agent_type][agent_id]
                 actions_parsed_t_i = []
+                action_sum = []
                 # split to operations
                 for ind in range(len(tags)):
                     st = 0 if ind == 0 else tags[ind - 1]
-                    actions_parsed_t_i.append(a_i[st:tags[ind]])
-                if agent_type == 0:
-                    self.speedup[agent_id], self.slowdown[agent_id], self.turnleft[agent_id], self.turnright[agent_id], self.rollleft[agent_id], self.rollright[agent_id], self.pullup[agent_id], self.pitchdown[agent_id] = tuple(actions_parsed_t_i)
-                else:
-                    self.missile[agent_id], self.gun[agent_id] = tuple(actions_parsed)
-                actions_parsed[agent_type].append(tuple(actions_parsed_t_i))
-        return actions_parsed
+                    # actions_parsed_t_i.append(a_i[st:tags[ind]][1] > a_i[st:tags[ind]][0])
+                    action_sum.append(a_i[st:tags[ind]][1] + a_i[st:tags[ind]][0])
+                # self.input_status.update(dict(zip(self.agent_type_action_mapping[agent_type], actions_parsed_t_i)))
+                actions_parsed_t_i = np.zeros(len(tags))
+                actions_parsed_t_i[np.array(action_sum).argmax()] = 1  # !!!!!
+                self.input_status.update(dict(zip(self.agent_type_action_mapping[agent_type], actions_parsed_t_i)))
+
+    def observation(self, agent_id=None, agent_type=None):
+        if agent_type is None:
+            obs = []
+            [[obs.append(self.observation(i, t)) for i in range(self.num_agents_each_type[t])] for t in range(self.num_agent_types)]
+            return obs
+        else:
+            obs = []
+            for machine in Main.players_allies:
+                if isinstance(machine, Aircraft):
+                    obs += [get_obs(machine, state_configs["AlliesAirCraft"])]
+            for machine in Main.players_ennemies:
+                if isinstance(machine, Aircraft):
+                    obs += [get_obs(machine, state_configs["EnermyAirCraft"])]
+            for en_missiles in Main.missiles_ennemies:
+                for missile in en_missiles:
+                    obs += [get_obs(missile, state_configs["Missile"])]
+            if obs != []:
+                obs = np.concatenate(obs)
+            if len(obs) == 70:
+                print("!!!!!!!!!!")
+            return obs
+
+    def get_rewards(self):
+        first = 0
+        aircrafts = []
+        for machine in Destroyable_Machine.machines_list:
+            if isinstance(machine, Aircraft):
+                aircrafts.append(machine)
+        rewards = [[1 - 20 * Missions.get_current_mission().failed] for i in range(self.num_agents)]
+        # try:
+        #     for agent in range(self.num_agents):
+        #         my = aircrafts[0]
+        #         pos_my = get_vec(my.get_position())
+        #         pos_en = np.zeros((len(aircrafts) - 1, 3))
+        #         for en, aircraft in enumerate(aircrafts[1:]):
+        #             pos_en[en] = get_vec(aircraft.get_position())
+        #         rewards[agent] = [-(min((((pos_en - pos_my) ** 2).sum(1)) ** 0.5))]
+        # except:
+        #     pass
+        return rewards
 
     # ------------------- Main loop:
     def step(self, actions):
         # while not Main.flag_exit:
         # parse actions to inputs
-        actions_parsed = self.parse_actions(actions)
+        self.parse_actions(actions)
 
-        Main.update_inputs(agent_actions=[actions_parsed[t][0] for t in range(self.num_agent_types)])
+        Main.update_inputs(input_status=self.input_status)
 
         if (not Main.flag_client_update_mode) or ((not Main.flag_renderless) and Main.flag_client_ask_update_scene):
             Main.update()
@@ -280,6 +311,16 @@ class HarFangDogFightEnv():
             time.sleep(1 / 120)
 
         Main.update_window()
+        obs_next = []
+        try:
+            obs_next = self.observation()
+        except:
+            pass
+        done = False
+        if Missions.get_current_mission().failed:
+            done = True
+
+        return obs_next, self.get_rewards(), [done] * self.num_agents, [{} for i in range(self.num_agents)]
 
         # ----------------- Exit:
 
@@ -292,3 +333,8 @@ class HarFangDogFightEnv():
 
         hg.RenderShutdown()
         hg.DestroyWindow(Main.win)
+
+# env = HarFangDogFightEnv()
+# while True:
+#     a = env.get_high_action()
+#     env.step([[a[t][0] * 0 * np.random.random(a[t][0].shape)] for t in range(env.num_agent_types)])

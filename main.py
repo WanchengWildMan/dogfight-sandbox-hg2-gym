@@ -48,14 +48,14 @@ if json_script != "":
 
 # --------------- Compile assets:
 print("Compiling assets...")
-if sys.platform == "linux" or sys.platform == "linux2":
-    assetc_cmd = [path.join(getcwd(), "../", "bin", "assetc", "assetc"), "assets", "-quiet", "-progress"]
-    dc.run_command(assetc_cmd)
-else:
-    if Main.flag_OpenGL:
-        dc.run_command("../bin/assetc/assetc assets -api GL -quiet -progress")
-    else:
-        dc.run_command("../bin/assetc/assetc assets -quiet -progress")
+# if sys.platform == "linux" or sys.platform == "linux2":
+#     assetc_cmd = [path.join(getcwd(), "../", "bin", "assetc", "assetc"), "assets", "-quiet", "-progress"]
+#     dc.run_command(assetc_cmd)
+# else:
+#     if Main.flag_OpenGL:
+#         dc.run_command("../bin/assetc/assetc assets -api GL -quiet -progress")
+#     else:
+#         dc.run_command("../bin/assetc/assetc assets -quiet -progress")
 
 # --------------- Init system
 

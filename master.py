@@ -1,6 +1,7 @@
 # Copyright (C) 2018-2021 Eric Kernin, NWNC HARFANG.
 
 import harfang as hg
+import numpy as np
 from Machines import *
 from MachineDevice import *
 from aircraft_miuss import *
@@ -33,7 +34,6 @@ from math import atan
 
 
 class Main:
-
     # Main display configuration (user-defined in "config.json" file)
 
     flag_fullscreen = False
@@ -46,6 +46,7 @@ class Main:
     # Control devices
 
     control_mode = ControlDevice.CM_KEYBOARD
+    control_mode = ControlDevice.AGENT_VIRTUAL_KEYBOARD
 
     # VR mode
     flag_vr = False
@@ -60,9 +61,9 @@ class Main:
     vr_tex0_program = None
     vr_quad_uniform_set_value_list = None
     vr_quad_uniform_set_texture_list = None
-    vr_hud = None # vec3 width, height, zdistance
+    vr_hud = None  # vec3 width, height, zdistance
 
-    vr_state = None # OpenVRState
+    vr_state = None  # OpenVRState
 
     initial_head_matrix = None
 
@@ -71,17 +72,17 @@ class Main:
     win = None
 
     timestamp = 0  # Frame count.
-    timestep = 1 / 60  # Frame dt
+    timestep = 1/60  # Frame dt
 
     flag_network_mode = False
     flag_client_update_mode = False
     flag_client_connected = False
     flag_client_ask_update_scene = False
 
-    flag_renderless = False
+    flag_renderless = True
     flag_running = False
     flag_display_radar_in_renderless = True
-    frame_time = 0 # Used to synchronize Renderless display informations
+    frame_time = 0  # Used to synchronize Renderless display informations
     flag_activate_particles_mem = True
     flag_sfx_mem = True
     max_view_id = 0
@@ -122,6 +123,7 @@ class Main:
     gamepad = None
     generic_controller = None
     pipeline = None
+    agent = True
 
     current_state = None
     t = 0
@@ -174,14 +176,17 @@ class Main:
     views_carousel_ptr = 0
 
     sprites_display_list = []
-    #texts_display_list = []
+    # texts_display_list = []
 
     destroyables_list = []  # whole missiles, aircrafts, ships used by HUD radar
-    destroyables_items = {} # items stored by their names
+    destroyables_items = {}  # items stored by their names
 
     font_program = None
     title_font_path = "font/destroy.ttf"
     hud_font_path = "font/Furore.otf"
+    inputs_mapping_file = "scripts/aircraft_user_inputs_mapping.json"
+    input_mapping_name = "AircraftUserInputsMapping"
+    inputs_mapping = {}
     title_font = None
     hud_font = None
     text_matrx = None
@@ -203,8 +208,7 @@ class Main:
 
     # Cockpit view:
     flag_cockpit_view = False
-    
-    
+
     scene_cockpit = None
     scene_cockpit_frameBuffer = None
     scene_cockpit_frameBuffer_left = None
@@ -215,19 +219,53 @@ class Main:
     cockpit_scene_quad_uniform_set_value_list = None
     cockpit_scene_quad_uniform_set_texture_list = None
 
-    #======= Aircrafts view:
+    # ======= Aircrafts view:
     selected_aircraft_id = 0
     selected_aircraft = None
 
     @classmethod
     def init(cls):
         cls.pl_resources = hg.PipelineResources()
-        cls.keyboard = hg.Keyboard()
+        cls.keyboard = hg.Keyboard() if not cls.agent else AgentVirtualKeyboard(name="AgentVirtualKeyboard", machine="", inputs_mapping_file=cls.inputs_mapping_file, control_mode=cls.control_mode)
         cls.mouse = hg.Mouse()
         cls.gamepad = hg.Gamepad()
         cls.generic_controller = hg.Joystick()
         Overlays.init()
         ControlDevice.init(cls.keyboard, cls.mouse, cls.gamepad, cls.generic_controller)
+        cls.inputs_mapping = {}
+        if cls.inputs_mapping_file != "":
+            cls.load_inputs_mapping_file(cls.inputs_mapping_file)
+
+    @classmethod
+    def load_inputs_mapping_file(cls, file_name):
+        file = hg.OpenText(file_name)
+        if not file:
+            print("ERROR - Can't open json file : " + file_name)
+        else:
+            json_script = hg.ReadString(file)
+            hg.Close(file)
+            if json_script != "":
+                cls.inputs_mapping_encoded = json.loads(json_script)
+                im = cls.inputs_mapping_encoded["AircraftUserInputsMapping"]
+                cmode_decode = {}
+                for cmode, maps in im.items():
+                    maps_decode = {}
+                    for cmd, hg_enum in maps.items():
+                        if hg_enum != "":
+                            if not hg_enum.isdigit():
+                                try:
+                                    exec("maps_decode['%s'] = hg.%s" % (cmd, hg_enum))
+                                except AttributeError:
+                                    print("ERROR - Harfang Enum not implemented ! - " + "hg." + hg_enum)
+                                    maps_decode[cmd] = ""
+                            else:
+                                maps_decode[cmd] = int(hg_enum)
+                        else:
+                            maps_decode[cmd] = ""
+                    cmode_decode[cmode] = maps_decode
+                cls.inputs_mapping = {cls.input_mapping_name: cmode_decode}
+            else:
+                print("ERROR - Inputs parameters empty : " + file_name)
 
     @classmethod
     def setup_vr(cls):
@@ -403,7 +441,7 @@ class Main:
 
     @classmethod
     def clear_views(cls):
-        for vid in range(cls.max_view_id+1):
+        for vid in range(cls.max_view_id + 1):
             hg.SetViewFrameBuffer(vid, hg.InvalidFrameBufferHandle)
             hg.SetViewRect(vid, 0, 0, int(cls.resolution.x), int(cls.resolution.y))
             hg.SetViewClear(vid, hg.CF_Depth, 0x0, 1.0, 0)
@@ -469,7 +507,6 @@ class Main:
 
         cls.scene_cockpit_aircrafts = []
 
-
     @classmethod
     def create_aircraft_carriers(cls, num_allies, num_ennemies):
 
@@ -488,7 +525,7 @@ class Main:
             carrier.add_to_update_list()
 
     @classmethod
-    def create_missiles(cls, machine:Destroyable_Machine, smoke_color):
+    def create_missiles(cls, machine: Destroyable_Machine, smoke_color):
         md = machine.get_device("MissilesDevice")
         md.set_missiles_config(machine.missiles_config)
         if md is not None:
@@ -532,7 +569,6 @@ class Main:
                 cls.missiles_allies.append([] + missiles)
                 cls.destroyables_list += missiles
 
-
         for i in range(num_ennemies):
             launcher = MissileLauncherS400("Ennemy_Missile_launcher_" + str(i + 1), cls.scene, cls.scene_physics, cls.pl_resources, 2, hg.Vec3(0, 500, 0), hg.Vec3(0, 0, 0))
             cls.missile_launchers_ennemies.append(launcher)
@@ -554,7 +590,6 @@ class Main:
         cls.missiles_ennemies = []
         cls.players_sfx = []
         cls.missiles_sfx = []
-
 
         for i, a_type in enumerate(allies_types):
 
@@ -582,7 +617,6 @@ class Main:
             if missiles is not None:
                 cls.missiles_allies.append([] + missiles)
                 cls.destroyables_list += missiles
-
 
         for i, a_type in enumerate(ennemies_types):
 
@@ -614,7 +648,7 @@ class Main:
         if cls.flag_sfx:
             cls.setup_sfx()
 
-        #cls.scene_physics.SceneCreatePhysicsFromAssets(cls.scene)
+        # cls.scene_physics.SceneCreatePhysicsFromAssets(cls.scene)
         cls.update_user_control_mode()
 
     @classmethod
@@ -676,13 +710,12 @@ class Main:
             if cls.num_players_allies > 0:
                 td.set_target_id(int(uniform(0, 1000) % cls.num_players_allies))
 
-
         cls.destroyables_items = {}
         for dm in cls.destroyables_list:
             cls.destroyables_items[dm.name] = dm
 
-        Destroyable_Machine.machines_list = cls.destroyables_list # !!! Move to Destroyable_Machine.__init__()
-        Destroyable_Machine.machines_items = cls.destroyables_items # !!! Move to Destroyable_Machine.__init__()
+        Destroyable_Machine.machines_list = cls.destroyables_list  # !!! Move to Destroyable_Machine.__init__()
+        Destroyable_Machine.machines_items = cls.destroyables_items  # !!! Move to Destroyable_Machine.__init__()
 
     # ----------------- Views -------------------------------------------------------------------
     @classmethod
@@ -785,7 +818,6 @@ class Main:
             cls.satellite_view = False
             cls.update_main_view_from_carousel()
         cls.smart_camera.set_track_view(view_name)
-        
 
     @classmethod
     def activate_cockpit_view(cls):
@@ -802,13 +834,11 @@ class Main:
             cls.set_track_view("back")
             cls.flag_cockpit_view = False
 
-
     @classmethod
     def switch_cockpit_view(cls, new_user_aircraft: Aircraft):
         if cls.flag_cockpit_view:
             if new_user_aircraft.get_current_pilot_head() is None:
                 cls.deactivate_cockpit_view()
-
 
     @classmethod
     def control_views(cls, keyboard):
@@ -854,8 +884,8 @@ class Main:
                     uctrl = cls.user_aircraft.get_device("UserControlDevice")
                     if uctrl is not None:
                         uctrl.deactivate()
-                    #ia = cls.user_aircraft.get_device("IAControlDevice")
-                    #if ia is not None:
+                    # ia = cls.user_aircraft.get_device("IAControlDevice")
+                    # if ia is not None:
                     #    ia.activate()
             cls.views_carousel_ptr += 1
             if cls.views_carousel_ptr >= len(cls.views_carousel):
@@ -926,7 +956,6 @@ class Main:
             elif keyboard.Down(hg.K_PageUp):
                 cls.scene.GetCurrentCamera().GetCamera().SetFov(cls.scene.GetCurrentCamera().GetCamera().GetFov() * 1.01)
 
-
     # =============================== Scene datas
     @classmethod
     def get_current_camera(cls):
@@ -971,7 +1000,7 @@ class Main:
         if machine.flag_display_horizontal_speed:
             az = machine.get_Z_axis()
             ah = hg.Normalize(hg.Vec3(az.x, 0, az.z))
-            Physics.display_vector(pos, ah * hs, "Horizontal speed",hg.Vec2(0, 0.01), hg.Color.Green)
+            Physics.display_vector(pos, ah * hs, "Horizontal speed", hg.Vec2(0, 0.01), hg.Color.Green)
 
     # =============================== 2D HUD =============================================
 
@@ -1001,15 +1030,15 @@ class Main:
         for missile_t in cls.missiles_ennemies:
             for missile in missile_t:
                 missile.set_smoke_color(cls.ennemies_missiles_smoke_color)
-    
+
     @classmethod
     def gui(cls):
         aircrafts = cls.players_allies + cls.players_ennemies
 
         if hg.ImGuiBegin("Main Settings"):
 
-            hg.ImGuiSetWindowPos("Main Settings",hg.Vec2(10, 60), hg.ImGuiCond_Once)
-            hg.ImGuiSetWindowSize("Main Settings",hg.Vec2(650,625), hg.ImGuiCond_Once)
+            hg.ImGuiSetWindowPos("Main Settings", hg.Vec2(10, 60), hg.ImGuiCond_Once)
+            hg.ImGuiSetWindowSize("Main Settings", hg.Vec2(650, 625), hg.ImGuiCond_Once)
 
             if hg.ImGuiButton("Load simulator parameters"):
                 cls.load_json_script()
@@ -1066,7 +1095,7 @@ class Main:
                     nm += " - USER -"
                 aircrafts_list.push_back(nm)
 
-            f, d = hg.ImGuiListBox("Aircrafts", cls.selected_aircraft_id, aircrafts_list,20)
+            f, d = hg.ImGuiListBox("Aircrafts", cls.selected_aircraft_id, aircrafts_list, 20)
             if f:
                 cls.selected_aircraft_id = d
 
@@ -1074,7 +1103,6 @@ class Main:
 
         cls.selected_aircraft = aircrafts[cls.selected_aircraft_id]
         cls.selected_aircraft.gui()
-
 
     @classmethod
     def load_json_script(cls, file_name="scripts/simulator_parameters.json"):
@@ -1108,18 +1136,17 @@ class Main:
 
     @classmethod
     def update_kinetics(cls, dts):
-        #for dm in Destroyable_Machine.update_list:
+        # for dm in Destroyable_Machine.update_list:
         #    dm.update_collision_nodes_matrices()
 
         for dm in Destroyable_Machine.update_list:
             dm.update_kinetics(dts)
             cls.display_machine_vectors(dm)
 
-
     @classmethod
     def clear_display_lists(cls):
         cls.sprites_display_list = []
-        #cls.texts_display_list = []
+        # cls.texts_display_list = []
         Overlays.texts2D_display_list = []
         Overlays.texts3D_display_list = []
         Overlays.lines = []
@@ -1158,19 +1185,18 @@ class Main:
         vid, passId = hg.PrepareSceneForwardPipelineViewDependentRenderData(vid, right_reflect, cls.scene, cls.render_data, cls.pipeline, cls.pl_resources, views)
         vid, passId = hg.SubmitSceneToForwardPipeline(vid, cls.scene, vr_eye_rect, right_reflect, cls.pipeline, cls.render_data, cls.pl_resources, cls.water_reflexion.quad_frameBuffer_right.handle)
         """
-    
+
         # ========== Display raymarch scene ===================
         output_fb_left = cls.post_process.quad_frameBuffer_left
         output_fb_right = cls.post_process.quad_frameBuffer_right
         cls.scene.canvas.clear_z = True
         cls.scene.canvas.clear_color = True
 
-        #tex_reflect_left_color = hg.GetColorTexture(cls.water_reflexion.quad_frameBuffer_left)
-        #tex_reflect_left_depth = hg.GetDepthTexture(cls.water_reflexion.quad_frameBuffer_left)
-        #tex_reflect_right_color = hg.GetColorTexture(cls.water_reflexion.quad_frameBuffer_right)
-        #tex_reflect_right_depth = hg.GetDepthTexture(cls.water_reflexion.quad_frameBuffer_right)
-        vid = cls.sea_render.render_vr(vid, cls.vr_state, vs_left, vs_right, output_fb_left, output_fb_right) #, tex_reflect_left_color, tex_reflect_left_depth, tex_reflect_right_color, tex_reflect_right_depth)
-
+        # tex_reflect_left_color = hg.GetColorTexture(cls.water_reflexion.quad_frameBuffer_left)
+        # tex_reflect_left_depth = hg.GetDepthTexture(cls.water_reflexion.quad_frameBuffer_left)
+        # tex_reflect_right_color = hg.GetColorTexture(cls.water_reflexion.quad_frameBuffer_right)
+        # tex_reflect_right_depth = hg.GetDepthTexture(cls.water_reflexion.quad_frameBuffer_right)
+        vid = cls.sea_render.render_vr(vid, cls.vr_state, vs_left, vs_right, output_fb_left, output_fb_right)  # , tex_reflect_left_color, tex_reflect_left_depth, tex_reflect_right_color, tex_reflect_right_depth)
 
         # ========== Display models scene =======================
         cls.scene.canvas.clear_z = False
@@ -1187,10 +1213,9 @@ class Main:
 
         # ==================== Display 3D Overlays ===========
 
-        #Overlays.add_text3D("HELLO WORLD", hg.Vec3(0, 50, 200), 1, hg.Color.Red)
+        # Overlays.add_text3D("HELLO WORLD", hg.Vec3(0, 50, 200), 1, hg.Color.Red)
 
         if len(Overlays.texts3D_display_list) > 0 or len(Overlays.lines) > 0:
-
             hg.SetViewFrameBuffer(vid, cls.post_process.quad_frameBuffer_left.handle)
             hg.SetViewRect(vid, 0, 0, int(cls.vr_state.width), int(cls.vr_state.height))
             hg.SetViewClear(vid, hg.CF_Depth, 0, 1.0, 0)
@@ -1208,7 +1233,6 @@ class Main:
             Overlays.display_texts3D(vid, eye_right)
             Overlays.draw_lines(vid)
             vid += 1
-
 
         # ==================== Display 2D sprites ===========
 
@@ -1266,17 +1290,16 @@ class Main:
         hg.SetViewTransform(vid, vs.view, vs.proj)
 
         cls.vr_quad_uniform_set_texture_list.clear()
-        #cls.vr_quad_uniform_set_texture_list.push_back(hg.MakeUniformSetTexture("s_tex", hg.OpenVRGetColorTexture(cls.vr_left_fb), 0))
+        # cls.vr_quad_uniform_set_texture_list.push_back(hg.MakeUniformSetTexture("s_tex", hg.OpenVRGetColorTexture(cls.vr_left_fb), 0))
         cls.vr_quad_uniform_set_texture_list.push_back(hg.MakeUniformSetTexture("s_tex", hg.GetColorTexture(cls.post_process.quad_frameBuffer_left), 0))
         hg.SetT(cls.vr_quad_matrix, hg.Vec3(cls.eye_t_x, 0, 1))
         hg.DrawModel(vid, cls.vr_quad_model, cls.vr_tex0_program, cls.vr_quad_uniform_set_value_list, cls.vr_quad_uniform_set_texture_list, cls.vr_quad_matrix, cls.vr_quad_render_state)
 
         cls.vr_quad_uniform_set_texture_list.clear()
-        #cls.vr_quad_uniform_set_texture_list.push_back(hg.MakeUniformSetTexture("s_tex", hg.OpenVRGetColorTexture(cls.vr_right_fb), 0))
+        # cls.vr_quad_uniform_set_texture_list.push_back(hg.MakeUniformSetTexture("s_tex", hg.OpenVRGetColorTexture(cls.vr_right_fb), 0))
         cls.vr_quad_uniform_set_texture_list.push_back(hg.MakeUniformSetTexture("s_tex", hg.GetColorTexture(cls.post_process.quad_frameBuffer_right), 0))
         hg.SetT(cls.vr_quad_matrix, hg.Vec3(-cls.eye_t_x, 0, 1))
         hg.DrawModel(vid, cls.vr_quad_model, cls.vr_tex0_program, cls.vr_quad_uniform_set_value_list, cls.vr_quad_uniform_set_texture_list, cls.vr_quad_matrix, cls.vr_quad_render_state)
-
 
     @classmethod
     def render_frame(cls, dts):
@@ -1287,8 +1310,8 @@ class Main:
         # ========== Display Reflect scene ===================
         cls.water_reflexion.set_camera(cls.scene)
 
-        #cls.scene.canvas.color = cls.sea_render.high_atmosphere_color
-        cls.scene.canvas.color = hg.Color(1, 0, 0, 1) # En attendant de fixer le pb de la depth texture du framebuffer.
+        # cls.scene.canvas.color = cls.sea_render.high_atmosphere_color
+        cls.scene.canvas.color = hg.Color(1, 0, 0, 1)  # En attendant de fixer le pb de la depth texture du framebuffer.
 
         cls.scene.canvas.clear_z = True
         cls.scene.canvas.clear_color = True
@@ -1334,7 +1357,7 @@ class Main:
         projection_matrix = hg.ComputePerspectiveProjectionMatrix(c.GetZNear(), c.GetZFar(), hg.FovToZoomFactor(c.GetFov()), hg.Vec2(res_x / res_y, 1))
         hg.SetViewTransform(vid, view_matrix, projection_matrix)
 
-        #Overlays.add_text3D("HELLO WORLD", hg.Vec3(0, 50, 200), 1, hg.Color.Red)
+        # Overlays.add_text3D("HELLO WORLD", hg.Vec3(0, 50, 200), 1, hg.Color.Red)
 
         Overlays.display_texts3D(vid, cls.scene.GetCurrentCamera().GetTransform().GetWorld())
         Overlays.draw_lines(vid)
@@ -1369,9 +1392,8 @@ class Main:
                 cls.display_text(vid, txt["text"], txt["pos"], txt["size"], txt["font"], txt["color"])
         """
 
-        #Overlays.add_text2D_from_3D_position("HELLO World !", hg.Vec3(0, 50, 200), hg.Vec2(-0.1, 0), 0.02, hg.Color.Red)
+        # Overlays.add_text2D_from_3D_position("HELLO World !", hg.Vec3(0, 50, 200), hg.Vec2(-0.1, 0), 0.02, hg.Color.Red)
         Overlays.display_texts2D(vid, cls.scene.GetCurrentCamera(), cls.resolution)
-
 
         vid += 1
         # ========== Post process:
@@ -1379,7 +1401,6 @@ class Main:
         cls.scene.canvas.clear_color = True
         cls.post_process.display(vid, cls.pl_resources, cls.resolution)
         cls.max_view_id = vid
-
 
     @classmethod
     def update_renderless(cls, dt):
@@ -1393,7 +1414,7 @@ class Main:
             Sprite.setup_matrix_sprites2D(vid, cls.resolution)
             for spr in cls.sprites_display_list:
                 spr.draw(vid)
-            #cls.texts_display_list.append({"text": "RENDERLESS MODE", "font": cls.hud_font, "pos": hg.Vec2(0.5, 0.5), "size": 0.018, "color": hg.Color.Red})
+            # cls.texts_display_list.append({"text": "RENDERLESS MODE", "font": cls.hud_font, "pos": hg.Vec2(0.5, 0.5), "size": 0.018, "color": hg.Color.Red})
             Overlays.add_text2D("RENDERLESS MODE", hg.Vec2(0.5, 0.5), 0.018, hg.Color.Red, cls.hud_font)
             """
             for txt in cls.texts_display_list:
@@ -1411,10 +1432,20 @@ class Main:
             cls.frame_time = 0
 
     @classmethod
-    def update_inputs(cls):
+    def update_inputs(cls, input_status=None):
         if cls.flag_running:
             cls.keyboard.Update()
             cls.mouse.Update()
+
+            if cls.agent:
+                if input_status is None:
+                    cmds = cls.inputs_mapping["AircraftUserInputsMapping"]["Keyboard"].keys()
+                    input_status = dict(zip(cmds, np.random.random(len(cmds)) > 0.5))
+                for cmd in input_status:
+                    if input_status[cmd]:
+                        cls.keyboard.Press(cls.inputs_mapping["AircraftUserInputsMapping"]["Keyboard"][cmd])
+                    else:
+                        cls.keyboard.Unpress(cls.inputs_mapping["AircraftUserInputsMapping"]["Keyboard"][cmd])
 
             if cls.gamepad is not None:
                 cls.gamepad.Update()
@@ -1442,7 +1473,7 @@ class Main:
     def update(cls):
         if cls.flag_running:
 
-            #cls.update_inputs()
+            # cls.update_inputs()
 
             real_dt = hg.TickClock()
             forced_dt = hg.time_from_sec_f(cls.timestep)
@@ -1469,7 +1500,7 @@ class Main:
 
             if cls.flag_display_fps:
                 cls.update_num_fps(hg.time_to_sec_f(real_dt))
-                #cls.texts_display_list.append({"text": "FPS %d" % (cls.num_fps), "font": cls.hud_font, "pos": hg.Vec2(0.001, 0.999), "size": 0.018, "color": hg.Color.Yellow})
+                # cls.texts_display_list.append({"text": "FPS %d" % (cls.num_fps), "font": cls.hud_font, "pos": hg.Vec2(0.001, 0.999), "size": 0.018, "color": hg.Color.Yellow})
                 Overlays.add_text2D("FPS %d" % (cls.num_fps), hg.Vec2(0.001, 0.999), 0.018, hg.Color.Yellow, cls.hud_font)
 
             # =========== State update:
@@ -1489,7 +1520,7 @@ class Main:
                 hg.Frame()
                 if cls.flag_vr:
                     hg.OpenVRSubmitFrame(cls.vr_left_fb, cls.vr_right_fb)
-                #hg.UpdateWindow(cls.win)
+                # hg.UpdateWindow(cls.win)
 
             # =========== Renderless mode:
             else:
@@ -1501,7 +1532,7 @@ class Main:
 
     @classmethod
     def update_window(cls):
-        #if not cls.flag_renderless_mode:
+        # if not cls.flag_renderless_mode:
         hg.UpdateWindow(cls.win)
 
     # ================================ Network ============================================
@@ -1509,4 +1540,3 @@ class Main:
     @classmethod
     def get_network(cls):
         return netws.get_network()
-
