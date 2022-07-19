@@ -1,5 +1,5 @@
 # dogfight-sandbox-hg2-gym
-Reinforcement environment of an air to air combat sandbox, created in Python 3 using the HARFANG 3D 2 framework, using PPO as an example.
+Reinforcement environment of an air to air combat sandbox, created in Python 3 using the HARFANG 3D 2 framework. Integrated PPO as an example.
 # Structure 
 ```env.py``` The environment for algorithm to interact with the game using interface ```step```.
 # Configurations
